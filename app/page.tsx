@@ -8,7 +8,15 @@ export default function Home() {
         <li><strong>search_images</strong> — Search 5M+ sports images from the ES media library</li>
       </ul>
       <h2>Endpoint</h2>
-      <code>/mcp</code>
+      <code>https://mcp.essentiallysports.com/mcp</code>
+      <h2>Claude Desktop config</h2>
+      <pre style={{ background: '#f4f4f4', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>{`{
+  "mcpServers": {
+    "essentiallysports": {
+      "url": "https://mcp.essentiallysports.com/mcp"
+    }
+  }
+}`}</pre>
       <p>Connect via Claude Desktop or any MCP-compatible client.</p>
     </main>
   );
