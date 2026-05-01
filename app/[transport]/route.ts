@@ -1,7 +1,8 @@
 import { createMcpHandler } from '@vercel/mcp-adapter';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { searchImages, searchImagesSchema, type ImageResult } from '@/tools/search-images';
 
-const IMAGE_PREVIEW_LIMIT = 5; // fetch thumbnails for first N results only
+const IMAGE_PREVIEW_LIMIT = 5;
 
 async function fetchAsBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
   try {
@@ -10,8 +11,7 @@ async function fetchAsBase64(url: string): Promise<{ data: string; mimeType: str
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const mimeType = contentType.split(';')[0].trim();
     const buffer = await res.arrayBuffer();
-    const data = Buffer.from(buffer).toString('base64');
-    return { data, mimeType };
+    return { data: Buffer.from(buffer).toString('base64'), mimeType };
   } catch {
     return null;
   }
@@ -40,14 +40,14 @@ const handler = createMcpHandler(
         'Results are ranked by relevance then recency.',
       ].join(' '),
       searchImagesSchema.shape,
-      async (input) => {
+      async (input): Promise<CallToolResult> => {
         const parsed = searchImagesSchema.parse(input);
         const result = await searchImages(parsed);
 
         if (result.images.length === 0) {
           return {
             content: [{
-              type: 'text',
+              type: 'text' as const,
               text: `No images found for "${parsed.query}"${parsed.type !== 'all' ? ` (filtered to ${parsed.type} only)` : ''}.`,
             }],
           };
@@ -55,7 +55,6 @@ const handler = createMcpHandler(
 
         const header = `Found ${result.found.toLocaleString()} image${result.found !== 1 ? 's' : ''} for "${parsed.query}" · page ${result.page} of ${result.total_pages}`;
 
-        // Fetch thumbnails for first N images in parallel
         const previewImages = result.images.slice(0, IMAGE_PREVIEW_LIMIT);
         const restImages = result.images.slice(IMAGE_PREVIEW_LIMIT);
 
@@ -66,40 +65,38 @@ const handler = createMcpHandler(
           })
         );
 
-        // Build content blocks: header → for each image: [image block?] + text block
-        const content: Array<
-          { type: 'text'; text: string } |
-          { type: 'image'; data: string; mimeType: string }
-        > = [{ type: 'text', text: header }];
+        const content: CallToolResult['content'] = [
+          { type: 'text' as const, text: header },
+        ];
 
         for (let i = 0; i < previewImages.length; i++) {
           const img = previewImages[i];
           const thumb = thumbnails[i];
           if (thumb) {
-            content.push({ type: 'image', data: thumb.data, mimeType: thumb.mimeType });
+            content.push({
+              type: 'image' as const,
+              data: thumb.data,
+              mimeType: thumb.mimeType,
+            });
           }
-          content.push({ type: 'text', text: imageMetaText(img) });
+          content.push({ type: 'text' as const, text: imageMetaText(img) });
         }
 
-        // Remaining images: text only
         if (restImages.length > 0) {
-          const restLines = restImages.map(img => imageMetaText(img)).join('\n\n');
-          content.push({ type: 'text', text: restLines });
+          content.push({
+            type: 'text' as const,
+            text: restImages.map(img => imageMetaText(img)).join('\n\n'),
+          });
         }
 
         return { content };
       }
     );
 
-    // Future tools go here:
-    // server.tool('list_articles', ...)
-    // server.tool('get_article', ...)
-    // server.tool('search_articles', ...)
+    // Future tools: list_articles, get_article, search_articles
   },
   {
-    capabilities: {
-      tools: {},
-    },
+    capabilities: { tools: {} },
   },
   {
     maxDuration: 60,
