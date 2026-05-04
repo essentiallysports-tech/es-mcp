@@ -148,8 +148,17 @@ const handler = createMcpHandler(
             r.engage_rate_pct > 0 && `Engage: ${r.engage_rate_pct}%`,
           ].filter(Boolean).join(' · ');
 
+          const url = r.slug ? `https://www.essentiallysports.com/${r.slug}/` : null;
+          const titleLine = r.title && url
+            ? `**[${r.title}](${url})**`
+            : r.title
+            ? `**${r.title}**`
+            : url
+            ? url
+            : '';
+
           const parts = [
-            r.title ? `**${r.title}**` : r.slug ? `slug: ${r.slug}` : '',
+            titleLine,
             meta,
             metrics,
             sources && `Sources: ${sources}`,
