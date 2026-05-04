@@ -87,13 +87,34 @@ export interface ArticleRow {
   src_msn: number;
   src_newsbreak: number;
   src_others: number;
+  metrics_pending?: boolean;
   [key: string]: unknown;
 }
 
+const WP_TABLE = '"es-data-lake"."wp_articles"';
+const WP_DATABASE = 'es-data-lake';
+
 export async function queryArticles(input: QueryArticlesInput): Promise<ArticleRow[]> {
-  const sql = buildSQL(queryArticlesSchema.parse(input));
+  const parsed = queryArticlesSchema.parse(input);
+  const sql = buildSQL(parsed);
   const rows = await runAthenaQuery(sql, DATABASE);
-  return rows.map(parseRow);
+  const primary = rows.map(parseRow);
+
+  // Supplement with wp_articles when filtering by publish date or slug —
+  // the pipeline lag means recently published articles may not be in article_big_table yet.
+  const needsFallback =
+    parsed.publish_date || parsed.publish_date_start || parsed.publish_date_end || parsed.slug;
+
+  if (!needsFallback) return primary;
+
+  const existingSlugs = new Set(primary.map(r => r.slug).filter(Boolean));
+  const wpSql = buildWpSQL(parsed);
+  const wpRows = await runAthenaQuery(wpSql, WP_DATABASE);
+  const wpPrimary = wpRows
+    .map(parseWpRow)
+    .filter(r => r.slug && !existingSlugs.has(r.slug));
+
+  return [...primary, ...wpPrimary];
 }
 
 function sanitize(s: string): string {
@@ -187,6 +208,66 @@ GROUP BY ${groupDims.join(', ')}
 ${having}
 ORDER BY ${orderCol} ${order_dir.toUpperCase()}
 LIMIT ${limit}`.trim();
+}
+
+function buildWpSQL(input: QueryArticlesInput): string {
+  const {
+    publish_date, publish_date_start, publish_date_end,
+    slug, sport, writer,
+    order_dir, limit,
+  } = input;
+
+  const conditions: string[] = [`post_status = 'publish'`];
+
+  if (publish_date) {
+    conditions.push(`publish_date = DATE '${sanitize(publish_date)}'`);
+  } else if (publish_date_start || publish_date_end) {
+    if (publish_date_start) conditions.push(`publish_date >= DATE '${sanitize(publish_date_start)}'`);
+    if (publish_date_end) conditions.push(`publish_date <= DATE '${sanitize(publish_date_end)}'`);
+  }
+
+  if (slug) conditions.push(`post_name = '${sanitize(slug)}'`);
+  if (sport) conditions.push(`LOWER(sports) LIKE LOWER('%${sanitize(sport)}%')`);
+  if (writer) conditions.push(`LOWER(post_author) LIKE LOWER('%${sanitize(writer)}%')`);
+
+  const where = `WHERE ${conditions.join('\n  AND ')}`;
+
+  return `
+SELECT
+  post_name AS slug,
+  post_title AS title,
+  sports AS sport_name,
+  publish_date,
+  CAST(published AS VARCHAR) AS publish_time
+FROM ${WP_TABLE}
+${where}
+ORDER BY publish_date ${order_dir.toUpperCase()}, published ${order_dir.toUpperCase()}
+LIMIT ${limit}`.trim();
+}
+
+function parseWpRow(row: Record<string, string>): ArticleRow {
+  return {
+    slug: row.slug || undefined,
+    title: row.title || undefined,
+    sport_name: row.sport_name || undefined,
+    publish_date: row.publish_date || undefined,
+    publish_time: row.publish_time || undefined,
+    total_pageviews: 0,
+    avg_scroll_rate: 0,
+    avg_time_on_page: 0,
+    engage_rate_pct: 0,
+    src_google_search: 0,
+    src_google_discover: 0,
+    src_google_news: 0,
+    src_facebook: 0,
+    src_reddit: 0,
+    src_flipboard: 0,
+    src_beehiiv: 0,
+    src_msn: 0,
+    src_newsbreak: 0,
+    src_others: 0,
+    metrics_pending: true,
+  };
 }
 
 function parseRow(row: Record<string, string>): ArticleRow {

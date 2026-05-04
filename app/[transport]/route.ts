@@ -149,12 +149,13 @@ const handler = createMcpHandler(
           ].filter(Boolean).join(' · ');
 
           const url = r.slug ? `https://www.essentiallysports.com/${r.slug}/` : null;
+          const pendingTag = r.metrics_pending ? ' ⏳ _metrics pending pipeline_' : '';
           const titleLine = r.title && url
-            ? `**[${r.title}](${url})**`
+            ? `**[${r.title}](${url})**${pendingTag}`
             : r.title
-            ? `**${r.title}**`
+            ? `**${r.title}**${pendingTag}`
             : url
-            ? url
+            ? `${url}${pendingTag}`
             : '';
 
           const parts = [
