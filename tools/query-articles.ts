@@ -47,13 +47,13 @@ export const queryArticlesSchema = z.object({
   ),
 
   order_by: z.enum([
-    'total_pageviews', 'publish_date', 'publish_time', 'avg_time_on_page',
+    'total_pageviews', 'publish_date', 'avg_time_on_page',
     'avg_scroll_rate', 'engage_rate_pct', 'writer', 'sport_name',
     'src_google_search', 'src_google_discover', 'src_google_news',
     'src_beehiiv', 'src_flipboard', 'src_newsbreak',
     'src_facebook', 'src_reddit', 'src_msn', 'src_others',
   ]).default('total_pageviews').describe(
-    'Column to sort by. Use publish_time to sort by exact publish timestamp. Use src_* columns to rank by a specific traffic source.'
+    'Column to sort by. Use src_* columns to rank by a specific traffic source.'
   ),
   order_dir: z.enum(['asc', 'desc']).default('desc'),
   limit: z.number().int().min(1).max(500).default(50).describe(
@@ -70,7 +70,6 @@ export interface ArticleRow {
   writer?: string;
   editor?: string;
   publish_date?: string;
-  publish_time?: string;
   entity?: string;
   content_type?: string;
   total_pageviews: number;
@@ -157,7 +156,6 @@ function buildSQL(input: QueryArticlesInput): string {
     'src_facebook', 'src_reddit', 'src_msn', 'src_others',
   ]);
   const orderCol = order_by === 'publish_date' ? 'MAX(publish_date)'
-    : order_by === 'publish_time' ? 'MAX(publish_time)'
     : order_by === 'writer' ? 'writer'
     : order_by === 'sport_name' ? 'sport_name'
     : srcCols.has(order_by) ? order_by
@@ -166,7 +164,6 @@ function buildSQL(input: QueryArticlesInput): string {
   return `
 SELECT
   ${groupDims.join(',\n  ')},
-  MAX(publish_time) AS publish_time,
   SUM(pageload) AS total_pageviews,
   ROUND(SUM(pageload * scroll_rate) / NULLIF(SUM(pageload), 0), 2) AS avg_scroll_rate,
   ROUND(SUM(pageload * avg_read_time_in_scroll_window) / NULLIF(SUM(pageload), 0), 2) AS avg_time_on_page,
